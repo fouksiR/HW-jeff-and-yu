@@ -1,0 +1,344 @@
+---
+title: "Q2 HW3"
+author: "Rstudio"
+date: "2022-12-04"
+output: html_document
+---
+
+
+## Part 2: MovieLens Data
+
+1.\ Load in the training dataset from [here](https://github.com/datasciencelabs/2022/blob/master/data/mv_st.RDS), which can be accessed as `mv_st$train`.
+
+
+```{r, echo=FALSE}
+setwd("C:\\Users\\Youval Fouks\\Desktop\\BST219_2022\\fouksiR- 2022HW3")
+list.files()
+mv1 = readRDS("mv_st.RDS") 
+
+head(mv1)
+```
+
+```{r, echo=FALSE}}
+if (!require(MASS)) {install.packages("MASS")}
+if (!require(caret)) {install.packages("caret")}
+if (!require(leaps)) {install.packages("leaps")}
+if (!require(gamlr)) {install.packages("gamlr")}
+if (!require(glmnet)) {install.packages("glmnet")}
+if (!require(purrr)) {install.packages("purrr")}
+if (!require(pROC)) {install.packages("pROC")}
+if (!require(survivalROC)) {install.packages("survivalROC")}
+if (!require(tidyr)) {install.packages("tidyr")}
+if (!require(ggplot2)) {install.packages("ggplot2")}
+if (!require(arsenal)) {install.packages("arsenal")}
+```
+
+2.\ Preprocess the data in any way you find appropriate. This could include removing noninformative features.
+
+```{r, echo=FALSE}}
+library(tidyr)
+library(dplyr)
+
+names(mv1)
+
+test <- mv1$test
+train <- mv1$train
+
+class(mv1$train)
+class(mv1$test)
+
+df.train <- as.data.frame(train)
+df.test <- as.data.frame(test)
+```
+
+```{r, echo=FALSE}}
+unique(train$genres)
+```
+```{r, echo=FALSE}}
+library(stringr)
+train1 <- separate_rows(df.train, genres, sep='\\|')
+test1 <- separate_rows(df.test, genres, sep='\\|')
+train1
+```
+
+```{r, echo=FALSE}}
+naniar::miss_var_summary(train1)
+naniar::pct_miss(train1)
+```
+```{r, echo=FALSE}}
+train1 <- train1 |> 
+  pivot_wider(names_from = genres, values_from = genres)
+select(train1, title, year, userId, rating, timestamp)
+
+test1 <- test1 |> 
+  pivot_wider(names_from = genres, values_from = genres)
+select(test1, title, year, userId, rating, timestamp)
+```
+recode var
+```{r, echo=FALSE}}
+
+cols.factor <- names(train1)[7:25] # or column index (change the index if needed)
+train1[cols.factor] <- lapply(train1[cols.factor], as.factor)
+
+library(dplyr)
+train1 <- train1 %>%
+  mutate_if(is.factor, funs(ifelse(is.na(.), 0, .)))
+
+cols.factor <- names(test1)[7:25] # or column index (change the index if needed)
+test1[cols.factor] <- lapply(test1[cols.factor], as.factor)
+
+library(dplyr)
+test1 <- test1 %>%
+  mutate_if(is.factor, funs(ifelse(is.na(.), 0, .)))
+
+#replace(is.na(train1), 0)
+#train1[train1 == "NA"] <- "0"
+#train1$Animation <-ifelse(train1$Animation == "NA" , 0, 1)
+```
+
+```{r, echo=FALSE}}
+naniar::miss_var_summary(train1)
+naniar::pct_miss(train1)
+```
+
+Table descriptive
+```{r, echo=FALSE}}
+cols.factor <- names(train1)[7:25] # or column index (change the index if needed)
+train1[cols.factor] <- lapply(train1[cols.factor], as.factor)
+
+cols.factor <- names(test1)[7:25] # or column index (change the index if needed)
+test1[cols.factor] <- lapply(test1[cols.factor], as.factor)
+```
+```{r, echo=FALSE}}
+library(arsenal)
+Table1 <- tableby(rating ~ title + year + userId + timestamp ,data= train1)
+summary(Table1)
+```
+
+3.\ Train a machine learning model. Choose at least one model validation method (data splitting, n-fold cross validation, and bootstrapping) that you learned in class to determine how well your model is doing in each case.
+
+Data Partition
+```{r, echo=FALSE}}
+df <-train1
+names(df)[14]=paste("Scif")
+names(df)[25]=paste("Noir")
+
+df.t <-test1
+names(df.t)[10]=paste("Scif")
+names(df.t)[23]=paste("Noir")
+
+df = subset(df, select = -c(2) )
+df.t = subset(df.t, select = -c(2) )
+```
+
+more manageable subset. We will take the first 1,000 predictors x and labels y:
+```{r, echo=FALSE}}
+train_subset <- df[1:10000,] 
+df <- train_subset
+
+test_subset <- df.t[1:10000,] 
+###################
+#####################
+df.t <- test_subset
+```
+
+```{r, echo=FALSE}}
+## 75% of the sample size
+smp_size <- floor(0.75 * nrow(df))
+
+## set the seed 
+set.seed(2050)
+train_ind <- sample(seq_len(nrow(df)), size = smp_size)
+
+train <- df[train_ind, ]
+test <- df[-train_ind, ]
+
+## 75% of the sample size
+smp_size.t <- floor(0.75 * nrow(df.t))
+
+## set the seed 
+set.seed(2051)
+test_ind <- sample(seq_len(nrow(df.t)), size = smp_size)
+
+train.t <- df.t[test_ind, ]
+test.t <- df.t[-test_ind, ]
+```
+
+Random Forest
+```{r, echo=FALSE}}
+library(randomForest)
+library(caret)
+
+```
+Fit the Random Forest Model
+```{r, echo=FALSE}}
+# Fit the model on the training set
+set.seed(123)
+model <- train(
+  rating ~., data = train, method = "rf",
+  trControl = trainControl("cv", number = 10),
+  importance = TRUE
+  )
+# Best tuning parameter
+model$bestTune
+
+```
+
+```{r, echo=FALSE}}
+# Final model
+model$finalModel
+```
+Find number of trees that produce lowest test MSE
+```{r, echo=FALSE}}
+#plot of the test MSE based on the number of trees used
+plot(model$finalModel)
+which.min(model$finalModel$mse)
+#find RMSE of best model
+sqrt(model$finalModel$mse[which.min(model$finalModel$mse)])
+
+
+#From the output we can see that the model that produced the lowest test mean squared error (MSE) used 105 trees
+```
+
+Make predictions on the test data
+```{r, echo=FALSE}}
+predicted.classes <- model %>% predict(test)
+head(predicted.classes)
+
+
+pred_randomForest <- predict(model, test)
+head(pred_randomForest)
+
+```
+Variable importance
+```{r, echo=FALSE}}
+importance(model)
+```
+
+```{r, echo=FALSE}}
+varImp(model)
+# Plot MeanDecreaseAccuracy
+varImpPlot(model$finalModel, type = 1)
+# Plot MeanDecreaseGini
+varImpPlot(model$finalModel, type = 2)
+```
+Tune
+This function produces the following plot, which displays the number of predictors used at each split when building the trees on the x-axis and the out-of-bag estimated error on the y-axis:
+```{r, echo=FALSE}}
+
+model_tuned <- tuneRF(
+               x=train[,-1], #define predictor variables
+               y=train$rating, #define response variable
+               ntreeTry=500,
+               mtryStart=4, 
+               stepFactor=1.5,
+               improve=0.01,
+               trace=FALSE #don't show real-time progress
+               )
+```
+
+Use the Final Model to Make Predictions
+
+```{r, echo=FALSE}}
+pred_s_train <- predict(model, newdata= train)
+pred_s_test <- predict(model, newdata= test)
+```
+predicted values versus observed values in both training dataset and test dataset.
+```{r, echo=FALSE}}
+### 
+plot(pred_s_train, train$rating)
+abline(coef=c(0,1), col="red")
+plot(pred_s_test, test$rating)
+abline(coef=c(0,1), col="blue")
+
+cor.test(pred_s_train, train$rating, method="pearson", conf.level=0.95)
+cor.test(pred_s_test, test$rating, method="pearson", conf.level=0.95)
+```
+
+Hyperparameters
+Note that, the random forest algorithm has a set of hyperparameters that should be tuned using cross-validation to avoid overfitting.
+```{r, echo=FALSE}}
+
+models <- list()
+for (nodesize in c(1, 2, 4, 8)) {
+    set.seed(123)
+    model <- train(
+      rating ~., data = train, method="rf", 
+      trControl = trainControl(method="cv", number=10),
+      nodesize = nodesize
+      )
+    model.name <- toString(nodesize)
+    models[[model.name]] <- model
+}
+# Compare results
+resamples(models) %>% summary()
+
+```
+
+#############
+Computing KNN classifier
+#
+Fit the model on the training set
+```{r, echo=FALSE}}
+#trControl, to set up 10-fold cross validation
+#preProcess, to normalize the data
+#tuneLength, to specify the number of possible k values to evaluate
+# Fit the model on the training set
+set.seed(123)
+model.knn <- train(
+  rating ~., data = train, method = "knn",
+  trControl = trainControl("cv", number = 10),
+  preProcess = c("center","scale"),
+  tuneLength = 10
+  )
+# Plot model accuracy vs different values of k
+plot(model.knn)
+```
+
+Print the best tuning parameter k that
+maximizes model accuracy
+```{r, echo=FALSE}}
+model.knn$bestTune
+```
+
+Make predictions on the test data
+```{r, echo=FALSE}}
+predicted.classes <- model.knn %>% predict(test)
+head(predicted.classes) #knn#
+
+```
+
+Use the Final Model to Make Predictions
+
+```{r, echo=FALSE}}
+pred_knn_train <- predict(model.knn, newdata= train)
+pred_knn_test <- predict(model.knn, newdata= test)
+head(pred_knn_test)#knn
+
+# results knn and rf - We see that our RMSE for our test is not very close to the RMSE we obtained on our model
+caret::RMSE(pred_knn_train, train$rating)
+caret::RMSE(pred_knn_train, test$rating)
+
+#caret::RMSE(pred_s_train, train$rating)
+caret::RMSE(pred_s_train, test$rating)
+
+
+```
+predicted values versus observed values in both training dataset and test dataset.
+```{r, echo=FALSE}}
+### 
+plot(pred_knn_train, train$rating)
+abline(coef=c(0,1), col="red")
+plot(pred_knn_test, test$rating)
+abline(coef=c(0,1), col="blue")
+
+cor.test(pred_knn_train, train$rating, method="pearson", conf.level=0.95)
+cor.test(pred_knn_test, test$rating, method="pearson", conf.level=0.95)
+
+mean((pred_knn_train-train$rating)**2)
+mean((pred_knn_test-test$rating)**2)
+```
+
+
+\textcolor{color}{For KNN Model , the correlation between predicted and observed rating is 0.3722099 in training dataset and 0.2718838  in test dataset, the 95\% CI of both don’t include 0. The ASE is 0.99 in training dataset and 1.03 in the test dataset. There is no overfitting  There is no overfitting.}
+
